@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const translate = require('@vitalets/google-translate-api');
 
 const SOURCE_CHANNEL_ID = process.env.SOURCE_CHANNEL_ID;
 const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
@@ -13,6 +12,16 @@ const client = new Client({
   ]
 });
 
+// Directly query Google Translate API via standard fetch
+async function translateDutchToEnglish(text) {
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=nl&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  const data = await res.json();
+  // Array format: [[[translatedText, originalText, ...]]]
+  return data[0].map(item => item[0]).join('');
+}
+
 client.once('ready', () => {
   console.log(`Bot logged in as ${client.user.tag}`);
 });
@@ -24,15 +33,16 @@ client.on('messageCreate', async (message) => {
     if (!message.content) return;
 
     try {
-      // Handles both default export and standard CJS module exports
-      const translateFn = translate.default || translate;
-      const res = await translateFn(message.content, { from: 'nl', to: 'en' });
+      const translatedText = await translateDutchToEnglish(message.content);
 
       const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID);
-      if (!targetChannel) return;
+      if (!targetChannel) {
+        console.error(`Target channel ${TARGET_CHANNEL_ID} not found.`);
+        return;
+      }
 
       const embed = new EmbedBuilder()
-        .setDescription(res.text)
+        .setDescription(translatedText)
         .setColor(0x3498db)
         .setAuthor({
           name: message.author.displayName || message.author.username,
@@ -42,7 +52,7 @@ client.on('messageCreate', async (message) => {
 
       await targetChannel.send({ embeds: [embed] });
     } catch (err) {
-      console.error('Translation error:', err);
+      console.error('Translation or delivery error:', err.message || err);
     }
   }
 });
