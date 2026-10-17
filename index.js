@@ -12,13 +12,13 @@ const client = new Client({
   ]
 });
 
-// Directly query Google Translate API via standard fetch
+// Queries Google Translate directly without needing third-party libraries
 async function translateDutchToEnglish(text) {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=nl&tl=en&dt=t&q=${encodeURIComponent(text)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
   const data = await res.json();
-  // Array format: [[[translatedText, originalText, ...]]]
+  // Response format: [[[translatedText, originalText, ...]]]
   return data[0].map(item => item[0]).join('');
 }
 
@@ -52,7 +52,7 @@ client.on('messageCreate', async (message) => {
 
       await targetChannel.send({ embeds: [embed] });
     } catch (err) {
-      console.error('Translation or delivery error:', err.message || err);
+      console.error('Translation error:', err.message || err);
     }
   }
 });
