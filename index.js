@@ -24,7 +24,9 @@ client.on('messageCreate', async (message) => {
     if (!message.content) return;
 
     try {
-      const res = await translate(message.content, { from: 'nl', to: 'en' });
+      // Handles both default export and standard CJS module exports
+      const translateFn = translate.default || translate;
+      const res = await translateFn(message.content, { from: 'nl', to: 'en' });
 
       const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID);
       if (!targetChannel) return;
