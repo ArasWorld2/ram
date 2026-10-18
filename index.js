@@ -12,29 +12,33 @@ const client = new Client({
   ]
 });
 
-// Primary: Lingva Translate API (Cloud-friendly)
-// Fallback: MyMemory API
-async function translateDutchToEnglish(text) {
-  try {
-    const lingvaUrl = `https://lingva.ml/api/v1/nl/en/${encodeURIComponent(text)}`;
-    const res = await fetch(lingvaUrl);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.translation) return data.translation;
-    }
-  } catch (err) {
-    console.log('Lingva failed, switching to MyMemory fallback...');
-  }
+// Strips custom Discord emojis (<:name:id>) so Google doesn't corrupt them
+function cleanInputText(text) {
+  return text.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '').trim();
+}
 
-  // Fallback API if Lingva fails or throttles
-  const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=nl|en`;
-  const res = await fetch(myMemoryUrl);
-  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+// Queries Google's public translation endpoint directly
+async function translateDutchToEnglish(text) {
+  const cleaned = cleanInputText(text);
+  if (!cleaned) return null; // Skip if message only contained custom emojis
+
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=nl&tl=en&dt=t&q=${encodeURIComponent(cleaned)}`;
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    }
+  });
+
+  if (!res.ok) throw new Error(`Google API status: ${res.status}`);
+
   const data = await res.json();
-  if (data && data.responseData && data.responseData.translatedText) {
-    return data.responseData.translatedText;
+  if (data && data[0]) {
+    // Collect translated segments
+    const translation = data[0].map(item => item[0]).join('');
+    return translation;
   }
-  throw new Error('Translation returned empty response');
+  
+  throw new Error('Translation returned empty payload');
 }
 
 client.once('ready', () => {
@@ -50,6 +54,9 @@ client.on('messageCreate', async (message) => {
     try {
       const translatedText = await translateDutchToEnglish(message.content);
 
+      // If text was only custom emojis, ignore
+      if (!translatedText) return;
+
       const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID);
       if (!targetChannel) {
         console.error(`Target channel ${TARGET_CHANNEL_ID} not found.`);
@@ -63,7 +70,7 @@ client.on('messageCreate', async (message) => {
           name: message.author.displayName || message.author.username,
           iconURL: message.author.displayAvatarURL()
         })
-        .setFooter({ text: `Translated from original: ${message.content}` });
+        .setFooter({ text: `Original Dutch: ${message.content}` });
 
       await targetChannel.send({ embeds: [embed] });
     } catch (err) {
