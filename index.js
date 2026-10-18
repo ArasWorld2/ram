@@ -12,14 +12,29 @@ const client = new Client({
   ]
 });
 
-// Queries Google Translate directly without needing third-party libraries
+// Primary: Lingva Translate API (Cloud-friendly)
+// Fallback: MyMemory API
 async function translateDutchToEnglish(text) {
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=nl&tl=en&dt=t&q=${encodeURIComponent(text)}`;
-  const res = await fetch(url);
+  try {
+    const lingvaUrl = `https://lingva.ml/api/v1/nl/en/${encodeURIComponent(text)}`;
+    const res = await fetch(lingvaUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.translation) return data.translation;
+    }
+  } catch (err) {
+    console.log('Lingva failed, switching to MyMemory fallback...');
+  }
+
+  // Fallback API if Lingva fails or throttles
+  const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=nl|en`;
+  const res = await fetch(myMemoryUrl);
   if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
   const data = await res.json();
-  // Response format: [[[translatedText, originalText, ...]]]
-  return data[0].map(item => item[0]).join('');
+  if (data && data.responseData && data.responseData.translatedText) {
+    return data.responseData.translatedText;
+  }
+  throw new Error('Translation returned empty response');
 }
 
 client.once('ready', () => {
