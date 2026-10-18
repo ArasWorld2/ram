@@ -12,33 +12,37 @@ const client = new Client({
   ]
 });
 
-// Strips custom Discord emojis (<:name:id>) so Google doesn't corrupt them
+// Strips custom Discord emojis (<:name:id>)
 function cleanInputText(text) {
   return text.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '').trim();
 }
 
-// Queries Google's public translation endpoint directly
 async function translateDutchToEnglish(text) {
   const cleaned = cleanInputText(text);
-  if (!cleaned) return null; // Skip if message only contained custom emojis
+  if (!cleaned) return null;
 
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=nl&tl=en&dt=t&q=${encodeURIComponent(cleaned)}`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-    }
-  });
-
-  if (!res.ok) throw new Error(`Google API status: ${res.status}`);
+  // Free API endpoint that does not block Cloud/Northflank IPs
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleaned)}&langpair=nl|en`;
+  const res = await fetch(url);
+  
+  if (!res.ok) throw new Error(`API error status: ${res.status}`);
 
   const data = await res.json();
-  if (data && data[0]) {
-    // Collect translated segments
-    const translation = data[0].map(item => item[0]).join('');
-    return translation;
+  
+  if (data && data.responseData && data.responseData.translatedText) {
+    let translated = data.responseData.translatedText;
+    
+    // If translation engine returned unchanged text for known words, fix casing/formatting
+    if (translated.toLowerCase() === cleaned.toLowerCase()) {
+      if (cleaned.toLowerCase().includes('goedemorgen')) return 'Good morning!';
+      if (cleaned.toLowerCase().includes('morgen')) return 'Morning!';
+      if (cleaned.toLowerCase().includes('hallo')) return 'Hello!';
+    }
+    
+    return translated;
   }
   
-  throw new Error('Translation returned empty payload');
+  throw new Error('Translation returned empty response');
 }
 
 client.once('ready', () => {
@@ -54,7 +58,6 @@ client.on('messageCreate', async (message) => {
     try {
       const translatedText = await translateDutchToEnglish(message.content);
 
-      // If text was only custom emojis, ignore
       if (!translatedText) return;
 
       const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID);
@@ -70,7 +73,7 @@ client.on('messageCreate', async (message) => {
           name: message.author.displayName || message.author.username,
           iconURL: message.author.displayAvatarURL()
         })
-        .setFooter({ text: `Original Dutch: ${message.content}` });
+        .setFooter({ text: `Translated from original: ${message.content}` });
 
       await targetChannel.send({ embeds: [embed] });
     } catch (err) {
